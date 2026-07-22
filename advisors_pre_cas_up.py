@@ -924,4 +924,4 @@ else:
                         st.error(f"Transcription failed: {e}")
 
             remaining, t_str = time_left()
-            st.caption(f"Time left: {t_str}")toggle and shells out a Student speaking page
+            st.caption(f"Time left: {t_str}")
