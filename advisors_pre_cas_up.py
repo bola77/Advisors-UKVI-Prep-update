@@ -921,7 +921,12 @@ else:
                         pick_question()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Transcription failed: {e}")
+                        # Avoid showing internal rerun objects as errors to students
+                        if e.__class__.__name__ == "RerunData":
+                            st.info("Transcription restarted. Please try submitting again.")
+                        else:
+                            st.error(f"Transcription failed: {e}")
+                    
 
             remaining, t_str = time_left()
             st.caption(f"Time left: {t_str}")
