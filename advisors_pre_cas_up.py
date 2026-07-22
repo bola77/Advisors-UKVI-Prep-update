@@ -1,4 +1,4 @@
-adds the mode import random
+import random
 import time
 import json
 import re
