@@ -1,7 +1,7 @@
 streamlit>=1.35.0
 pandas>=2.2.0
 openai>=1.30.0
-python>=3.05
 audio-recorder-streamlit>=0.0.5
+git+https://github.com/streamlit/files-connection.git
 streamlit-files-connection>=0.1.0
 s3fs>=2024.5.0
