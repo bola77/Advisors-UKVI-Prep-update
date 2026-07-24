@@ -2,12 +2,18 @@
 
 import json
 import re
-
+import streamlit as st
 from openai import OpenAI
+
 
 from questions import RED_FLAGS, POSITIVE, ANSWER_TIPS, COURSE_PROFILES
 
-client = OpenAI()
+def get_openai_client():
+    api_key = st.secrets.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    return OpenAI(api_key=api_key)
+
 
 
 def is_basic_gibberish(text: str) -> bool:
