@@ -129,6 +129,17 @@ def bespoke_score(answer: str, category: str, profile: dict) -> dict:
 
 
 def openai_evaluate_answer(answer: str, category: str, question: str, profile: dict) -> dict:
+    client = get_openai_client()
+    if client is None:
+        return {
+            "score": 3,
+            "feedback": "Model-based evaluation unavailable because OPENAI_API_KEY is not configured.",
+            "student_tip": ANSWER_TIPS.get(category, ANSWER_TIPS["default"]),
+            "risk_flags": [],
+            "missing_points": [],
+            "readiness": "Moderate risk",
+        }
+
     prompt = f"""
 You are an expert UK university compliance officer conducting a Pre UKVI credibility interview.
 
