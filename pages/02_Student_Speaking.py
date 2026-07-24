@@ -2,7 +2,6 @@
 
 import time
 import streamlit as st
-from streamlit_mic_recorder import mic_recorder
 
 from advisors_theme import apply_advisors_theme
 from questions import (
@@ -21,6 +20,13 @@ from session import (
 )
 from scoring import bespoke_score, openai_evaluate_answer
 
+try:
+    from streamlit_mic_recorder import mic_recorder
+except ImportError:
+    mic_recorder = None
+
+
+# ------------ Page setup ------------
 
 st.set_page_config(
     page_title="Pre UKVI Compliance Interview – Student Speaking",
@@ -34,11 +40,24 @@ st.title("Pre UKVI Compliance Interview – Student Speaking Mode")
 st.caption("Speak your answers as in a real UKVI interview; get instant feedback.")
 
 
+# ------------ Simple transcription stub ------------
+
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
+    """
+    Replace this stub with real speech-to-text later.
+    """
     return "This is a placeholder transcript. Replace with real transcription."
 
 
+# ------------ Session state ------------
+
 init_session_state(st)
+
+if "spoken_audio_bytes" not in st.session_state:
+    st.session_state.spoken_audio_bytes = None
+
+
+# ------------ Sidebar: applicant profile & controls ------------
 
 with st.sidebar:
     st.header("👤 Applicant Profile")
@@ -77,6 +96,7 @@ with st.sidebar:
 
     if reset:
         reset_interview_state(st)
+        st.session_state.spoken_audio_bytes = None
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
@@ -93,6 +113,7 @@ with st.sidebar:
         st.session_state.idx = 0
         st.session_state.scores = []
         st.session_state.log = []
+        st.session_state.spoken_audio_bytes = None
         st.session_state.profile = {
             "name": s_name or "Applicant",
             "university": s_university or "your university",
@@ -110,6 +131,9 @@ with st.sidebar:
         if remaining == 0:
             st.warning("Time is up for this question.")
 
+
+# ------------ Scoring explanation ------------
+
 with st.expander("How your spoken answers are scored"):
     st.markdown(
         """
@@ -122,6 +146,9 @@ with st.expander("How your spoken answers are scored"):
 Your transcript (what the visa officer hears) is scored using the same logic as the typed mode.
         """
     )
+
+
+# ------------ Main speaking UI ------------
 
 if not st.session_state.started:
     st.info(
@@ -210,6 +237,7 @@ else:
             }
         )
         st.session_state.scores.append(1)
+        st.session_state.spoken_audio_bytes = None
         st.session_state.idx += 1
         pick_question(st)
         st.rerun()
@@ -235,24 +263,32 @@ else:
             f"Example programmes include: {cluster['examples']}."
         )
 
-    st.info("Record a short answer, then submit it for transcription and scoring.")
+    st.info("Record a short answer, then click submit.")
 
-    audio_data = mic_recorder(
-        start_prompt="🎙️ Start recording",
-        stop_prompt="⏹️ Stop recording",
-        just_once=True,
-        use_container_width=True,
-        key=f"mic_{idx}",
-    )
+    if mic_recorder is None:
+        st.warning("Microphone recorder is not installed in this deployment.")
+    else:
+        audio_data = mic_recorder(
+            start_prompt="🎙️ Start recording",
+            stop_prompt="⏹️ Stop recording",
+            just_once=True,
+            use_container_width=True,
+            key=f"mic_{idx}",
+        )
 
-    audio_bytes = None
-    if audio_data and isinstance(audio_data, dict):
-        audio_bytes = audio_data.get("bytes")
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/wav")
-            st.caption(
-                f"Recorded audio ready. Sample rate: {audio_data.get('sample_rate', 'unknown')} Hz."
-            )
+        if audio_data and isinstance(audio_data, dict):
+            new_audio = audio_data.get("bytes")
+            if new_audio:
+                st.session_state.spoken_audio_bytes = new_audio
+                st.caption(
+                    f"Recorded audio ready. Sample rate: "
+                    f"{audio_data.get('sample_rate', 'unknown')} Hz."
+                )
+
+    audio_bytes = st.session_state.spoken_audio_bytes
+
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/wav")
 
     typed_fallback = st.text_area(
         "Fallback: type your answer here if microphone capture fails",
@@ -339,6 +375,7 @@ else:
                 }
             )
 
+            st.session_state.spoken_audio_bytes = None
             time.sleep(DEFAULT_THINK_TIME)
             st.session_state.idx += 1
             pick_question(st)
