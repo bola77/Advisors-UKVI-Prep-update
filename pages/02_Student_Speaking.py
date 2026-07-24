@@ -1,8 +1,8 @@
 # pages/02_Student_Speaking.py
 
 import time
-
 import streamlit as st
+from streamlit_mic_recorder import mic_recorder
 
 from advisors_theme import apply_advisors_theme
 from questions import (
@@ -128,6 +128,7 @@ if not st.session_state.started:
         f"Fill in your profile on the left, then click 'Start Speaking Interview'. "
         f"Estimated duration: about {approx_minutes} minutes."
     )
+
 elif st.session_state.completed:
     scores = st.session_state.scores
     avg = sum(scores) / len(scores) if scores else 0
@@ -234,96 +235,117 @@ else:
             f"Example programmes include: {cluster['examples']}."
         )
 
-    st.info("Record your answer below, then submit it for transcription and scoring.")
+    st.info("Record a short answer, then submit it for transcription and scoring.")
 
-    audio_file = st.audio_input("Record your answer")
+    audio_data = mic_recorder(
+        start_prompt="🎙️ Start recording",
+        stop_prompt="⏹️ Stop recording",
+        just_once=True,
+        use_container_width=True,
+        key=f"mic_{idx}",
+    )
 
     audio_bytes = None
-    if audio_file is not None:
-        audio_bytes = audio_file.read()
-        st.audio(audio_bytes, format="audio/wav")
+    if audio_data and isinstance(audio_data, dict):
+        audio_bytes = audio_data.get("bytes")
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
+            st.caption(
+                f"Recorded audio ready. Sample rate: {audio_data.get('sample_rate', 'unknown')} Hz."
+            )
 
-    if audio_bytes:
-        if st.button(
-            "Submit spoken answer →",
-            use_container_width=True,
-            key=f"submit_spoken_{idx}",
-        ):
-            try:
+    typed_fallback = st.text_area(
+        "Fallback: type your answer here if microphone capture fails",
+        height=120,
+        key=f"typed_fallback_{idx}",
+    )
+
+    if st.button(
+        "Submit spoken answer →",
+        use_container_width=True,
+        key=f"submit_spoken_{idx}",
+    ):
+        try:
+            if audio_bytes:
                 with st.spinner("Transcribing and scoring your spoken answer..."):
                     transcript = transcribe_audio_bytes(audio_bytes)
-
                 cleaned = transcript.strip()
-                if not cleaned:
-                    st.warning("No speech detected. Please record again with a clear spoken answer.")
-                    st.stop()
+            else:
+                cleaned = typed_fallback.strip()
 
-                st.markdown("**Transcript (what UKVI would hear):**")
-                st.write(cleaned)
+            if not cleaned:
+                st.warning("Please record a short answer or type your response.")
+                st.stop()
 
-                local = bespoke_score(cleaned, category, st.session_state.profile)
-                final_score = local["score"]
-                feedback = local["feedback"]
-                student_tip = local["student_tip"]
-                risk_flags = local.get("risk_flags", [])
-                missing_points = local.get("missing_points", [])
-                readiness = local.get("readiness", "Moderate risk")
+            st.markdown("**Transcript (what UKVI would hear):**")
+            st.write(cleaned)
 
-                if not local.get("red_flag") and final_score <= 2:
-                    try:
-                        oa = openai_evaluate_answer(
-                            cleaned, category, question, st.session_state.profile
-                        )
-                        final_score = int(oa.get("score", final_score))
-                        feedback = oa.get("feedback", feedback)
-                        student_tip = oa.get("student_tip", student_tip)
-                        risk_flags = oa.get("risk_flags", risk_flags) or risk_flags
-                        missing_points = oa.get("missing_points", missing_points) or missing_points
-                        readiness = oa.get("readiness", readiness)
-                    except Exception as e:
-                        st.caption(
-                            f"Model-based evaluation unavailable, using local scoring only. ({e})"
-                        )
+            local = bespoke_score(cleaned, category, st.session_state.profile)
+            final_score = local["score"]
+            feedback = local["feedback"]
+            student_tip = local["student_tip"]
+            risk_flags = local.get("risk_flags", [])
+            missing_points = local.get("missing_points", [])
+            readiness = local.get("readiness", "Moderate risk")
 
-                if local.get("red_flag"):
-                    st.error("Your answer contains high-risk language and must be reframed.")
-                st.markdown(f"**Score:** {final_score}/5 — {feedback}")
-                st.caption(f"Tip: {student_tip}")
-                st.caption(
-                    f"Signals: {local.get('generic_pos', 0)} generic positives, "
-                    f"{local.get('cluster_hits', 0)} course-track keywords."
-                )
-                if risk_flags:
-                    st.warning("Risk flags: " + ", ".join(risk_flags))
-                if missing_points:
-                    st.caption("Missing points: " + ", ".join(missing_points))
+            if not local.get("red_flag") and final_score <= 2:
+                try:
+                    oa = openai_evaluate_answer(
+                        cleaned, category, question, st.session_state.profile
+                    )
+                    final_score = int(oa.get("score", final_score))
+                    feedback = oa.get("feedback", feedback)
+                    student_tip = oa.get("student_tip", student_tip)
+                    risk_flags = oa.get("risk_flags", risk_flags) or risk_flags
+                    missing_points = oa.get("missing_points", missing_points) or missing_points
+                    readiness = oa.get("readiness", readiness)
+                except Exception as e:
+                    st.caption(
+                        f"Model-based evaluation unavailable, using local scoring only. ({e})"
+                    )
 
-                st.session_state.scores.append(final_score)
-                st.session_state.log.append(
-                    {
-                        "Question #": idx + 1,
-                        "Category": category,
-                        "Question": question,
-                        "Answer": cleaned,
-                        "Score": final_score,
-                        "Feedback": feedback,
-                        "Student Tip": student_tip,
-                        "Risk Flags": ", ".join(risk_flags),
-                        "Missing Points": ", ".join(missing_points),
-                        "Counsellor Note": local.get("counsellor_note", ""),
-                        "Readiness": readiness,
-                        "Red Flag": local.get("red_flag", False),
-                        "Generic Positives": local.get("generic_pos", 0),
-                        "Cluster Hits": local.get("cluster_hits", 0),
-                    }
-                )
+            if local.get("red_flag"):
+                st.error("Your answer contains high-risk language and must be reframed.")
 
-                time.sleep(DEFAULT_THINK_TIME)
-                st.session_state.idx += 1
-                pick_question(st)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Transcription or scoring failed: {e}")
+            st.markdown(f"**Score:** {final_score}/5 — {feedback}")
+            st.caption(f"Tip: {student_tip}")
+            st.caption(
+                f"Signals: {local.get('generic_pos', 0)} generic positives, "
+                f"{local.get('cluster_hits', 0)} course-track keywords."
+            )
+
+            if risk_flags:
+                st.warning("Risk flags: " + ", ".join(risk_flags))
+            if missing_points:
+                st.caption("Missing points: " + ", ".join(missing_points))
+
+            st.session_state.scores.append(final_score)
+            st.session_state.log.append(
+                {
+                    "Question #": idx + 1,
+                    "Category": category,
+                    "Question": question,
+                    "Answer": cleaned,
+                    "Score": final_score,
+                    "Feedback": feedback,
+                    "Student Tip": student_tip,
+                    "Risk Flags": ", ".join(risk_flags),
+                    "Missing Points": ", ".join(missing_points),
+                    "Counsellor Note": local.get("counsellor_note", ""),
+                    "Readiness": readiness,
+                    "Red Flag": local.get("red_flag", False),
+                    "Generic Positives": local.get("generic_pos", 0),
+                    "Cluster Hits": local.get("cluster_hits", 0),
+                }
+            )
+
+            time.sleep(DEFAULT_THINK_TIME)
+            st.session_state.idx += 1
+            pick_question(st)
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Transcription or scoring failed: {e}")
 
     remaining, t_str = time_left(st)
     st.caption(f"Time left: {t_str}")
