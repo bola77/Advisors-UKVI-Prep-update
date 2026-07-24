@@ -236,7 +236,7 @@ else:
 
     st.info("Record your answer below, then submit it for transcription and scoring.")
 
-    audio_file = st.audio_input("Record your answer", sample_rate=16000)
+    audio_file = st.audio_input("Record your answer")
 
     audio_bytes = None
     if audio_file is not None:
