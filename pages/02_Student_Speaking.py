@@ -22,8 +22,6 @@ from session import (
 from scoring import bespoke_score, openai_evaluate_answer
 
 
-# ------------ Page setup ------------
-
 st.set_page_config(
     page_title="Pre UKVI Compliance Interview – Student Speaking",
     page_icon="🎓",
@@ -36,17 +34,9 @@ st.title("Pre UKVI Compliance Interview – Student Speaking Mode")
 st.caption("Speak your answers as in a real UKVI interview; get instant feedback.")
 
 
-# ------------ Simple transcription stub ------------
-
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
-    """
-    Replace this stub with real speech-to-text (e.g. Whisper API).
-    For now, it returns a placeholder so you can test the flow.
-    """
     return "This is a placeholder transcript. Replace with real transcription."
 
-
-# ------------ Sidebar: applicant profile & controls ------------
 
 init_session_state(st)
 
@@ -87,7 +77,7 @@ with st.sidebar:
 
     if reset:
         reset_interview_state(st)
-        st.experimental_rerun()
+        st.rerun()
 
     total_sections = len(QUESTION_ORDER)
     approx_minutes = total_sections * 3
@@ -112,16 +102,13 @@ with st.sidebar:
             "course_track": course_track,
         }
         pick_question(st)
-        st.experimental_rerun()
+        st.rerun()
 
     if st.session_state.started and not st.session_state.completed:
         remaining, t_str = time_left(st)
         st.caption(f"Time left this question: {t_str}")
         if remaining == 0:
             st.warning("Time is up for this question.")
-
-
-# ------------ Scoring explanation ------------
 
 with st.expander("How your spoken answers are scored"):
     st.markdown(
@@ -135,9 +122,6 @@ with st.expander("How your spoken answers are scored"):
 Your transcript (what the visa officer hears) is scored using the same logic as the typed mode.
         """
     )
-
-
-# ------------ Main speaking UI ------------
 
 if not st.session_state.started:
     st.info(
@@ -205,7 +189,6 @@ else:
     remaining, t_str = time_left(st)
 
     if remaining == 0 and not st.session_state.get("question_expired", False):
-        # Auto-advance with low score when time expires
         st.session_state.question_expired = True
         st.session_state.log.append(
             {
@@ -228,7 +211,7 @@ else:
         st.session_state.scores.append(1)
         st.session_state.idx += 1
         pick_question(st)
-        st.experimental_rerun()
+        st.rerun()
 
     st.progress(
         idx / total_q if total_q else 0,
@@ -251,24 +234,16 @@ else:
             f"Example programmes include: {cluster['examples']}."
         )
 
-    # Audio recording
-    try:
-        from audio_recorder_streamlit import audio_recorder
-    except ImportError:
-        st.error(
-            "Audio recording package not available. Ask your advisor to enable speaking mode, "
-            "or use the Advisor (typed) page instead."
-        )
-        st.stop()
+    st.info("Record your answer below, then submit it for transcription and scoring.")
 
-    audio_bytes = audio_recorder(
-        pause_threshold=2.0,
-        energy_threshold=0.01,
-        sample_rate=16000,
-    )
+    audio_file = st.audio_input("Record your answer", sample_rate=16000)
+
+    audio_bytes = None
+    if audio_file is not None:
+        audio_bytes = audio_file.read()
+        st.audio(audio_bytes, format="audio/wav")
 
     if audio_bytes:
-        st.audio(audio_bytes, format="audio/wav")
         if st.button(
             "Submit spoken answer →",
             use_container_width=True,
@@ -346,7 +321,7 @@ else:
                 time.sleep(DEFAULT_THINK_TIME)
                 st.session_state.idx += 1
                 pick_question(st)
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Transcription or scoring failed: {e}")
 
