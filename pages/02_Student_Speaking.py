@@ -36,6 +36,43 @@ st.set_page_config(
 
 apply_advisors_theme()
 
+st.markdown(
+    """
+    <style>
+    .big-timer-wrap {
+        border-radius: 22px;
+        padding: 1.25rem 1rem 1rem 1rem;
+        background: rgba(15, 23, 42, 0.06);
+        text-align: center;
+        margin: 0.5rem 0 1rem 0;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+    }
+    .big-timer-label {
+        font-size: 1rem;
+        opacity: 0.75;
+        margin-bottom: 0.35rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }
+    .big-timer-value {
+        font-size: 4.8rem;
+        line-height: 1;
+        font-weight: 900;
+        margin: 0;
+    }
+    .big-timer-green { color: #15803d; }
+    .big-timer-amber { color: #d97706; }
+    .big-timer-red { color: #dc2626; }
+    .big-timer-note {
+        margin-top: 0.35rem;
+        font-size: 0.95rem;
+        opacity: 0.75;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("Pre UKVI Compliance Interview – Student Speaking Mode")
 st.caption("Speak your answers as in a real UKVI interview; get instant feedback.")
 
@@ -55,6 +92,35 @@ init_session_state(st)
 
 if "spoken_audio_bytes" not in st.session_state:
     st.session_state.spoken_audio_bytes = None
+
+
+# ------------ Live timer fragment ------------
+
+@st.fragment(run_every="1s")
+def live_timer():
+    if st.session_state.get("started") and not st.session_state.get("completed"):
+        remaining, t_str = time_left(st)
+
+        if remaining > 60:
+            timer_class = "big-timer-green"
+        elif remaining > 20:
+            timer_class = "big-timer-amber"
+        else:
+            timer_class = "big-timer-red"
+
+        st.markdown(
+            f"""
+            <div class="big-timer-wrap">
+                <div class="big-timer-label">Time left for this question</div>
+                <div class="big-timer-value {timer_class}">{t_str}</div>
+                <div class="big-timer-note">Try to answer clearly before time runs out.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if remaining == 0:
+            st.warning("Time is up for this question.")
 
 
 # ------------ Sidebar: applicant profile & controls ------------
@@ -124,12 +190,6 @@ with st.sidebar:
         }
         pick_question(st)
         st.rerun()
-
-    if st.session_state.started and not st.session_state.completed:
-        remaining, t_str = time_left(st)
-        st.caption(f"Time left this question: {t_str}")
-        if remaining == 0:
-            st.warning("Time is up for this question.")
 
 
 # ------------ Scoring explanation ------------
@@ -214,7 +274,7 @@ else:
     category = st.session_state.current_category
     question = st.session_state.current_question
     total_q = len(QUESTION_ORDER)
-    remaining, t_str = time_left(st)
+    remaining, _ = time_left(st)
 
     if remaining == 0 and not st.session_state.get("question_expired", False):
         st.session_state.question_expired = True
@@ -250,6 +310,8 @@ else:
     st.markdown(f"**Topic:** `{category}`")
     st.markdown("### Interview Question")
     st.write(question)
+
+    live_timer()
 
     st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
     st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
@@ -383,6 +445,3 @@ else:
 
         except Exception as e:
             st.error(f"Transcription or scoring failed: {e}")
-
-    remaining, t_str = time_left(st)
-    st.caption(f"Time left: {t_str}")
