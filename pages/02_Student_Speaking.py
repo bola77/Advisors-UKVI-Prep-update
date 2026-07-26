@@ -26,8 +26,6 @@ except ImportError:
     mic_recorder = None
 
 
-# ------------ Page setup ------------
-
 st.set_page_config(
     page_title="Pre UKVI Compliance Interview – Student Speaking",
     page_icon="🎓",
@@ -77,28 +75,26 @@ st.title("Pre UKVI Compliance Interview – Student Speaking Mode")
 st.caption("Speak your answers as in a real UKVI interview; get instant feedback.")
 
 
-# ------------ Simple transcription stub ------------
-
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
-    """
-    Replace this stub with real speech-to-text later.
-    """
     return "This is a placeholder transcript. Replace with real transcription."
 
-
-# ------------ Session state ------------
 
 init_session_state(st)
 
 if "spoken_audio_bytes" not in st.session_state:
     st.session_state.spoken_audio_bytes = None
 
+if "is_submitting" not in st.session_state:
+    st.session_state.is_submitting = False
 
-# ------------ Live timer fragment ------------
 
 @st.fragment(run_every="1s")
 def live_timer():
-    if st.session_state.get("started") and not st.session_state.get("completed"):
+    if (
+        st.session_state.get("started")
+        and not st.session_state.get("completed")
+        and not st.session_state.get("is_submitting")
+    ):
         remaining, t_str = time_left(st)
 
         if remaining > 60:
@@ -119,11 +115,6 @@ def live_timer():
             unsafe_allow_html=True,
         )
 
-        if remaining == 0:
-            st.warning("Time is up for this question.")
-
-
-# ------------ Sidebar: applicant profile & controls ------------
 
 with st.sidebar:
     st.header("👤 Applicant Profile")
@@ -163,6 +154,7 @@ with st.sidebar:
     if reset:
         reset_interview_state(st)
         st.session_state.spoken_audio_bytes = None
+        st.session_state.is_submitting = False
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
@@ -180,6 +172,7 @@ with st.sidebar:
         st.session_state.scores = []
         st.session_state.log = []
         st.session_state.spoken_audio_bytes = None
+        st.session_state.is_submitting = False
         st.session_state.profile = {
             "name": s_name or "Applicant",
             "university": s_university or "your university",
@@ -191,8 +184,6 @@ with st.sidebar:
         pick_question(st)
         st.rerun()
 
-
-# ------------ Scoring explanation ------------
 
 with st.expander("How your spoken answers are scored"):
     st.markdown(
@@ -207,8 +198,6 @@ Your transcript (what the visa officer hears) is scored using the same logic as 
         """
     )
 
-
-# ------------ Main speaking UI ------------
 
 if not st.session_state.started:
     st.info(
@@ -276,7 +265,11 @@ else:
     total_q = len(QUESTION_ORDER)
     remaining, _ = time_left(st)
 
-    if remaining == 0 and not st.session_state.get("question_expired", False):
+    if (
+        remaining == 0
+        and not st.session_state.get("question_expired", False)
+        and not st.session_state.get("is_submitting")
+    ):
         st.session_state.question_expired = True
         st.session_state.log.append(
             {
@@ -298,6 +291,7 @@ else:
         )
         st.session_state.scores.append(1)
         st.session_state.spoken_audio_bytes = None
+        st.session_state.is_submitting = False
         st.session_state.idx += 1
         pick_question(st)
         st.rerun()
@@ -311,59 +305,68 @@ else:
     st.markdown("### Interview Question")
     st.write(question)
 
-    live_timer()
+    if not st.session_state.is_submitting:
+        live_timer()
+        st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
+        st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
+        st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
 
-    st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
-    st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
-    st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
+        selected_track = st.session_state.profile.get("course_track")
+        if selected_track and selected_track in COURSE_PROFILES:
+            cluster = COURSE_PROFILES[selected_track]
+            st.caption(
+                f"Course track recommendation ({selected_track}): {cluster['extra_tip']} "
+                f"Example programmes include: {cluster['examples']}."
+            )
 
-    selected_track = st.session_state.profile.get("course_track")
-    if selected_track and selected_track in COURSE_PROFILES:
-        cluster = COURSE_PROFILES[selected_track]
-        st.caption(
-            f"Course track recommendation ({selected_track}): {cluster['extra_tip']} "
-            f"Example programmes include: {cluster['examples']}."
+        st.info("Record a short answer, then click submit.")
+
+        if mic_recorder is None:
+            st.warning("Microphone recorder is not installed in this deployment.")
+        else:
+            audio_data = mic_recorder(
+                start_prompt="🎙️ Start recording",
+                stop_prompt="⏹️ Stop recording",
+                just_once=True,
+                use_container_width=True,
+                key=f"mic_{idx}",
+            )
+
+            if audio_data and isinstance(audio_data, dict):
+                new_audio = audio_data.get("bytes")
+                if new_audio:
+                    st.session_state.spoken_audio_bytes = new_audio
+                    st.caption(
+                        f"Recorded audio ready. Sample rate: "
+                        f"{audio_data.get('sample_rate', 'unknown')} Hz."
+                    )
+
+        audio_bytes = st.session_state.spoken_audio_bytes
+
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
+
+        typed_fallback = st.text_area(
+            "Fallback: type your answer here if microphone capture fails",
+            height=120,
+            key=f"typed_fallback_{idx}",
         )
 
-    st.info("Record a short answer, then click submit.")
-
-    if mic_recorder is None:
-        st.warning("Microphone recorder is not installed in this deployment.")
-    else:
-        audio_data = mic_recorder(
-            start_prompt="🎙️ Start recording",
-            stop_prompt="⏹️ Stop recording",
-            just_once=True,
+        if st.button(
+            "Submit spoken answer →",
             use_container_width=True,
-            key=f"mic_{idx}",
-        )
+            key=f"submit_spoken_{idx}",
+        ):
+            st.session_state.is_submitting = True
+            st.rerun()
 
-        if audio_data and isinstance(audio_data, dict):
-            new_audio = audio_data.get("bytes")
-            if new_audio:
-                st.session_state.spoken_audio_bytes = new_audio
-                st.caption(
-                    f"Recorded audio ready. Sample rate: "
-                    f"{audio_data.get('sample_rate', 'unknown')} Hz."
-                )
+    else:
+        st.info("Processing your answer...")
 
-    audio_bytes = st.session_state.spoken_audio_bytes
-
-    if audio_bytes:
-        st.audio(audio_bytes, format="audio/wav")
-
-    typed_fallback = st.text_area(
-        "Fallback: type your answer here if microphone capture fails",
-        height=120,
-        key=f"typed_fallback_{idx}",
-    )
-
-    if st.button(
-        "Submit spoken answer →",
-        use_container_width=True,
-        key=f"submit_spoken_{idx}",
-    ):
         try:
+            audio_bytes = st.session_state.spoken_audio_bytes
+            typed_fallback = st.session_state.get(f"typed_fallback_{idx}", "")
+
             if audio_bytes:
                 with st.spinner("Transcribing and scoring your spoken answer..."):
                     transcript = transcribe_audio_bytes(audio_bytes)
@@ -372,6 +375,7 @@ else:
                 cleaned = typed_fallback.strip()
 
             if not cleaned:
+                st.session_state.is_submitting = False
                 st.warning("Please record a short answer or type your response.")
                 st.stop()
 
@@ -438,10 +442,13 @@ else:
             )
 
             st.session_state.spoken_audio_bytes = None
+            st.session_state.is_submitting = False
+
             time.sleep(DEFAULT_THINK_TIME)
             st.session_state.idx += 1
             pick_question(st)
             st.rerun()
 
         except Exception as e:
+            st.session_state.is_submitting = False
             st.error(f"Transcription or scoring failed: {e}")
