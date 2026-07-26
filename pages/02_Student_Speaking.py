@@ -84,6 +84,12 @@ init_session_state(st)
 if "spoken_audio_bytes" not in st.session_state:
     st.session_state.spoken_audio_bytes = None
 
+if "pending_audio_bytes" not in st.session_state:
+    st.session_state.pending_audio_bytes = None
+
+if "pending_typed_answer" not in st.session_state:
+    st.session_state.pending_typed_answer = ""
+
 if "is_submitting" not in st.session_state:
     st.session_state.is_submitting = False
 
@@ -154,6 +160,8 @@ with st.sidebar:
     if reset:
         reset_interview_state(st)
         st.session_state.spoken_audio_bytes = None
+        st.session_state.pending_audio_bytes = None
+        st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
         st.rerun()
 
@@ -172,6 +180,8 @@ with st.sidebar:
         st.session_state.scores = []
         st.session_state.log = []
         st.session_state.spoken_audio_bytes = None
+        st.session_state.pending_audio_bytes = None
+        st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
         st.session_state.profile = {
             "name": s_name or "Applicant",
@@ -291,6 +301,8 @@ else:
         )
         st.session_state.scores.append(1)
         st.session_state.spoken_audio_bytes = None
+        st.session_state.pending_audio_bytes = None
+        st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
         st.session_state.idx += 1
         pick_question(st)
@@ -346,7 +358,7 @@ else:
         if audio_bytes:
             st.audio(audio_bytes, format="audio/wav")
 
-        typed_fallback = st.text_area(
+        st.text_area(
             "Fallback: type your answer here if microphone capture fails",
             height=120,
             key=f"typed_fallback_{idx}",
@@ -357,6 +369,8 @@ else:
             use_container_width=True,
             key=f"submit_spoken_{idx}",
         ):
+            st.session_state.pending_audio_bytes = st.session_state.spoken_audio_bytes
+            st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "")
             st.session_state.is_submitting = True
             st.rerun()
 
@@ -364,8 +378,8 @@ else:
         st.info("Processing your answer...")
 
         try:
-            audio_bytes = st.session_state.spoken_audio_bytes
-            typed_fallback = st.session_state.get(f"typed_fallback_{idx}", "")
+            audio_bytes = st.session_state.pending_audio_bytes
+            typed_fallback = st.session_state.pending_typed_answer
 
             if audio_bytes:
                 with st.spinner("Transcribing and scoring your spoken answer..."):
@@ -376,8 +390,10 @@ else:
 
             if not cleaned:
                 st.session_state.is_submitting = False
+                st.session_state.pending_audio_bytes = None
+                st.session_state.pending_typed_answer = ""
                 st.warning("Please record a short answer or type your response.")
-                st.stop()
+                st.rerun()
 
             st.markdown("**Transcript (what UKVI would hear):**")
             st.write(cleaned)
@@ -442,6 +458,8 @@ else:
             )
 
             st.session_state.spoken_audio_bytes = None
+            st.session_state.pending_audio_bytes = None
+            st.session_state.pending_typed_answer = ""
             st.session_state.is_submitting = False
 
             time.sleep(DEFAULT_THINK_TIME)
@@ -451,4 +469,6 @@ else:
 
         except Exception as e:
             st.session_state.is_submitting = False
+            st.session_state.pending_audio_bytes = None
+            st.session_state.pending_typed_answer = ""
             st.error(f"Transcription or scoring failed: {e}")
