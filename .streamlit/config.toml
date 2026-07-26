@@ -9,6 +9,8 @@ font = "sans serif"
 [server]
 headless = true
 
+ADMIN_PASSWORD = "admin2026"
+
 [browser]
 gatherUsageStats = false
 
