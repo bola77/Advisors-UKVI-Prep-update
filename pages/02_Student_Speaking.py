@@ -2,6 +2,7 @@
 
 import time
 import streamlit as st
+import streamlit.components.v1 as components
 
 from advisors_theme import apply_advisors_theme
 from questions import (
@@ -58,9 +59,6 @@ st.markdown(
         font-weight: 900;
         margin: 0;
     }
-    .big-timer-green .big-timer-value { color: #15803d; }
-    .big-timer-amber .big-timer-value { color: #d97706; }
-    .big-timer-red .big-timer-value { color: #dc2626; }
     .big-timer-note {
         margin-top: 0.35rem;
         font-size: 0.95rem;
@@ -86,56 +84,92 @@ def render_js_timer():
     dom_id = f"ukvi-timer-{question_idx}"
 
     html = f"""
-    <div id="{dom_id}" class="big-timer-wrap big-timer-green">
-        <div class="big-timer-label">Time left for this question</div>
-        <div class="big-timer-value">--:--</div>
-        <div class="big-timer-note">Try to answer clearly before time runs out.</div>
-    </div>
-    <script>
-    (function() {{
-        const container = document.getElementById("{dom_id}");
-        if (!container) return;
+    <html>
+      <head>
+        <style>
+          body {{
+            margin: 0;
+            font-family: sans-serif;
+            background: transparent;
+          }}
+          .big-timer-wrap {{
+            border-radius: 22px;
+            padding: 1.25rem 1rem 1rem 1rem;
+            background: rgba(15, 23, 42, 0.06);
+            text-align: center;
+            margin: 0;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+          }}
+          .big-timer-label {{
+            font-size: 1rem;
+            opacity: 0.75;
+            margin-bottom: 0.35rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+          }}
+          .big-timer-value {{
+            font-size: 4.8rem;
+            line-height: 1;
+            font-weight: 900;
+            margin: 0;
+            color: #15803d;
+          }}
+          .big-timer-note {{
+            margin-top: 0.35rem;
+            font-size: 0.95rem;
+            opacity: 0.75;
+          }}
+        </style>
+      </head>
+      <body>
+        <div id="{dom_id}" class="big-timer-wrap">
+            <div class="big-timer-label">Time left for this question</div>
+            <div id="{dom_id}-value" class="big-timer-value">--:--</div>
+            <div id="{dom_id}-note" class="big-timer-note">Try to answer clearly before time runs out.</div>
+        </div>
 
-        const valueEl = container.querySelector(".big-timer-value");
-        const noteEl = container.querySelector(".big-timer-note");
-        let secs = {remaining};
+        <script>
+        (function() {{
+            const valueEl = document.getElementById("{dom_id}-value");
+            const noteEl = document.getElementById("{dom_id}-note");
+            let secs = {remaining};
 
-        function updateDisplay() {{
-            if (secs < 0) secs = 0;
+            function updateDisplay() {{
+                if (secs < 0) secs = 0;
 
-            const mm = Math.floor(secs / 60);
-            const ss = secs % 60;
-            valueEl.textContent =
-                mm.toString().padStart(2, "0") + ":" + ss.toString().padStart(2, "0");
+                const mm = Math.floor(secs / 60);
+                const ss = secs % 60;
+                valueEl.textContent =
+                    mm.toString().padStart(2, "0") + ":" + ss.toString().padStart(2, "0");
 
-            container.classList.remove("big-timer-green", "big-timer-amber", "big-timer-red");
-
-            if (secs > 60) {{
-                container.classList.add("big-timer-green");
-                noteEl.textContent = "Try to answer clearly before time runs out.";
-            }} else if (secs > 20) {{
-                container.classList.add("big-timer-amber");
-                noteEl.textContent = "Focus your answer, you still have some time.";
-            }} else {{
-                container.classList.add("big-timer-red");
-                noteEl.textContent = "Finish your answer soon, time is almost up.";
+                if (secs > 60) {{
+                    valueEl.style.color = "#15803d";
+                    noteEl.textContent = "Try to answer clearly before time runs out.";
+                }} else if (secs > 20) {{
+                    valueEl.style.color = "#d97706";
+                    noteEl.textContent = "Focus your answer, you still have some time.";
+                }} else {{
+                    valueEl.style.color = "#dc2626";
+                    noteEl.textContent = "Finish your answer soon, time is almost up.";
+                }}
             }}
-        }}
 
-        updateDisplay();
-
-        const intervalId = setInterval(function() {{
-            secs -= 1;
             updateDisplay();
-            if (secs <= 0) {{
-                clearInterval(intervalId);
-            }}
-        }}, 1000);
-    }})();
-    </script>
+
+            const intervalId = setInterval(function() {{
+                secs -= 1;
+                updateDisplay();
+                if (secs <= 0) {{
+                    clearInterval(intervalId);
+                }}
+            }}, 1000);
+        }})();
+        </script>
+      </body>
+    </html>
     """
 
-    st.html(html, unsafe_allow_javascript=True)
+    components.html(html, height=170)
 
 
 init_session_state(st)
