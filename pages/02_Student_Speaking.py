@@ -135,7 +135,7 @@ def render_js_timer():
     </script>
     """
 
-    st.html(html, height=170)
+    st.html(html, unsafe_allow_javascript=True)
 
 
 init_session_state(st)
