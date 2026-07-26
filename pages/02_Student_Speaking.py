@@ -58,9 +58,9 @@ st.markdown(
         font-weight: 900;
         margin: 0;
     }
-    .big-timer-green { color: #15803d; }
-    .big-timer-amber { color: #d97706; }
-    .big-timer-red { color: #dc2626; }
+    .big-timer-green .big-timer-value { color: #15803d; }
+    .big-timer-amber .big-timer-value { color: #d97706; }
+    .big-timer-red .big-timer-value { color: #dc2626; }
     .big-timer-note {
         margin-top: 0.35rem;
         font-size: 0.95rem;
@@ -79,26 +79,63 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     return "This is a placeholder transcript. Replace with real transcription."
 
 
-def render_timer():
-    remaining, t_str = time_left(st)
+def render_js_timer():
+    remaining = st.session_state.get("current_remaining_secs", 0)
+    question_idx = st.session_state.get("current_question_idx", 0)
 
-    if remaining > 60:
-        timer_class = "big-timer-green"
-    elif remaining > 20:
-        timer_class = "big-timer-amber"
-    else:
-        timer_class = "big-timer-red"
+    dom_id = f"ukvi-timer-{question_idx}"
 
-    st.markdown(
-        f"""
-        <div class="big-timer-wrap">
-            <div class="big-timer-label">Time left for this question</div>
-            <div class="big-timer-value {timer_class}">{t_str}</div>
-            <div class="big-timer-note">Try to answer clearly before time runs out.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    html = f"""
+    <div id="{dom_id}" class="big-timer-wrap big-timer-green">
+        <div class="big-timer-label">Time left for this question</div>
+        <div class="big-timer-value">--:--</div>
+        <div class="big-timer-note">Try to answer clearly before time runs out.</div>
+    </div>
+    <script>
+    (function() {{
+        const container = document.getElementById("{dom_id}");
+        if (!container) return;
+
+        const valueEl = container.querySelector(".big-timer-value");
+        const noteEl = container.querySelector(".big-timer-note");
+        let secs = {remaining};
+
+        function updateDisplay() {{
+            if (secs < 0) secs = 0;
+
+            const mm = Math.floor(secs / 60);
+            const ss = secs % 60;
+            valueEl.textContent =
+                mm.toString().padStart(2, "0") + ":" + ss.toString().padStart(2, "0");
+
+            container.classList.remove("big-timer-green", "big-timer-amber", "big-timer-red");
+
+            if (secs > 60) {{
+                container.classList.add("big-timer-green");
+                noteEl.textContent = "Try to answer clearly before time runs out.";
+            }} else if (secs > 20) {{
+                container.classList.add("big-timer-amber");
+                noteEl.textContent = "Focus your answer, you still have some time.";
+            }} else {{
+                container.classList.add("big-timer-red");
+                noteEl.textContent = "Finish your answer soon, time is almost up.";
+            }}
+        }}
+
+        updateDisplay();
+
+        const intervalId = setInterval(function() {{
+            secs -= 1;
+            updateDisplay();
+            if (secs <= 0) {{
+                clearInterval(intervalId);
+            }}
+        }}, 1000);
+    }})();
+    </script>
+    """
+
+    st.html(html, height=170)
 
 
 init_session_state(st)
@@ -114,6 +151,12 @@ if "pending_typed_answer" not in st.session_state:
 
 if "is_submitting" not in st.session_state:
     st.session_state.is_submitting = False
+
+if "current_remaining_secs" not in st.session_state:
+    st.session_state.current_remaining_secs = 0
+
+if "current_question_idx" not in st.session_state:
+    st.session_state.current_question_idx = 0
 
 
 with st.sidebar:
@@ -269,6 +312,9 @@ else:
     total_q = len(QUESTION_ORDER)
     remaining, _ = time_left(st)
 
+    st.session_state.current_remaining_secs = remaining
+    st.session_state.current_question_idx = idx
+
     if (
         remaining == 0
         and not st.session_state.get("question_expired", False)
@@ -312,7 +358,7 @@ else:
     st.write(question)
 
     if not st.session_state.is_submitting:
-        render_timer()
+        render_js_timer()
         st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
         st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
         st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
