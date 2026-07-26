@@ -1,8 +1,11 @@
 # pages/02_Student_Speaking.py
 
 import time
+import os
+import io
 import streamlit as st
 import streamlit.components.v1 as components
+from openai import OpenAI
 
 from advisors_theme import apply_advisors_theme
 from questions import (
@@ -74,7 +77,23 @@ st.caption("Speak your answers as in a real UKVI interview; get instant feedback
 
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
-    return "This is a placeholder transcript. Replace with real transcription."
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+    client = OpenAI(api_key=api_key)
+
+    audio_buffer = io.BytesIO(audio_bytes)
+    audio_buffer.name = "recording.wav"
+
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_buffer,
+        language="en",
+    )
+
+    text = getattr(transcript, "text", "") or ""
+    return text.strip()
 
 
 def render_js_timer():
@@ -386,7 +405,6 @@ else:
         if st.session_state.audio_error_message:
             st.warning(st.session_state.audio_error_message)
 
-        # Submit button FIRST so it is always visible
         submit_now = st.button(
             "Submit spoken answer →",
             use_container_width=True,
