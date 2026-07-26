@@ -192,6 +192,9 @@ if "current_remaining_secs" not in st.session_state:
 if "current_question_idx" not in st.session_state:
     st.session_state.current_question_idx = 0
 
+if "audio_error_message" not in st.session_state:
+    st.session_state.audio_error_message = ""
+
 
 with st.sidebar:
     st.header("👤 Applicant Profile")
@@ -234,6 +237,7 @@ with st.sidebar:
         st.session_state.pending_audio_bytes = None
         st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
+        st.session_state.audio_error_message = ""
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
@@ -254,6 +258,7 @@ with st.sidebar:
         st.session_state.pending_audio_bytes = None
         st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
+        st.session_state.audio_error_message = ""
         st.session_state.profile = {
             "name": s_name or "Applicant",
             "university": s_university or "your university",
@@ -376,6 +381,10 @@ else:
             )
 
         st.info("Record a short answer, then click submit.")
+        st.caption("For reliability, keep recordings short. If recording fails, type your answer in the box below.")
+
+        if st.session_state.audio_error_message:
+            st.warning(st.session_state.audio_error_message)
 
         if mic_recorder is None:
             st.warning("Microphone recorder is not installed in this deployment.")
@@ -390,11 +399,20 @@ else:
 
             if audio_data and isinstance(audio_data, dict):
                 new_audio = audio_data.get("bytes")
-                if new_audio:
-                    st.session_state.spoken_audio_bytes = new_audio
-                    st.caption(
-                        f"Recorded audio ready. Sample rate: "
-                        f"{audio_data.get('sample_rate', 'unknown')} Hz."
+                sr = audio_data.get("sample_rate", "unknown")
+                audio_error = audio_data.get("error")
+
+                if audio_error:
+                    st.session_state.spoken_audio_bytes = None
+                    st.session_state.audio_error_message = f"Recording failed: {audio_error}. Please type your answer below."
+                elif new_audio and isinstance(new_audio, (bytes, bytearray)):
+                    st.session_state.spoken_audio_bytes = bytes(new_audio)
+                    st.session_state.audio_error_message = ""
+                    st.caption(f"Recorded audio ready. Sample rate: {sr} Hz.")
+                else:
+                    st.session_state.spoken_audio_bytes = None
+                    st.session_state.audio_error_message = (
+                        "Recording format was not recognised. Please type your answer below and submit."
                     )
 
         audio_bytes = st.session_state.spoken_audio_bytes
@@ -414,7 +432,7 @@ else:
             key=f"submit_spoken_{idx}",
         ):
             st.session_state.pending_audio_bytes = st.session_state.spoken_audio_bytes
-            st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "")
+            st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "").strip()
             st.session_state.is_submitting = True
             st.rerun()
 
@@ -424,20 +442,25 @@ else:
         try:
             audio_bytes = st.session_state.pending_audio_bytes
             typed_fallback = st.session_state.pending_typed_answer
+            cleaned = ""
 
             if audio_bytes:
-                with st.spinner("Transcribing and scoring your spoken answer..."):
-                    transcript = transcribe_audio_bytes(audio_bytes)
-                cleaned = transcript.strip()
-            else:
+                try:
+                    with st.spinner("Transcribing and scoring your spoken answer..."):
+                        transcript = transcribe_audio_bytes(audio_bytes)
+                    cleaned = (transcript or "").strip()
+                except Exception as transcribe_error:
+                    st.session_state.audio_error_message = (
+                        f"Audio could not be processed ({transcribe_error}). "
+                        f"Typed answer will be used if provided."
+                    )
+                    cleaned = ""
+
+            if not cleaned:
                 cleaned = typed_fallback.strip()
 
             if not cleaned:
-                st.session_state.is_submitting = False
-                st.session_state.pending_audio_bytes = None
-                st.session_state.pending_typed_answer = ""
-                st.warning("Please record a short answer or type your response.")
-                st.stop()
+                cleaned = "[No valid spoken transcript captured. User submitted without usable audio or typed fallback.]"
 
             st.markdown("**Transcript (what UKVI would hear):**")
             st.write(cleaned)
@@ -450,7 +473,15 @@ else:
             missing_points = local.get("missing_points", [])
             readiness = local.get("readiness", "Moderate risk")
 
-            if not local.get("red_flag") and final_score <= 2:
+            if "No valid spoken transcript captured" in cleaned:
+                final_score = 1
+                feedback = "No usable response was captured for this question."
+                student_tip = "Keep your recording shorter, or type your answer if recording fails."
+                risk_flags = list(set(risk_flags + ["No valid audio submission"]))
+                missing_points = list(set(missing_points + ["No usable spoken or typed response"]))
+                readiness = "Elevated risk"
+
+            elif not local.get("red_flag") and final_score <= 2:
                 try:
                     oa = openai_evaluate_answer(
                         cleaned, category, question, st.session_state.profile
@@ -505,6 +536,7 @@ else:
             st.session_state.pending_audio_bytes = None
             st.session_state.pending_typed_answer = ""
             st.session_state.is_submitting = False
+            st.session_state.audio_error_message = ""
 
             time.sleep(DEFAULT_THINK_TIME)
             st.session_state.idx += 1
