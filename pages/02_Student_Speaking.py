@@ -35,6 +35,57 @@ st.set_page_config(
     page_icon="🎓",
     layout="wide",
 )
+st.markdown("""
+<style>
+/* Hide Streamlit header/toolbar items */
+div[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+button[kind="header"] {
+    display: none !important;
+}
+
+.stDeployButton {
+    display: none !important;
+}
+
+[data-testid="stStatusWidget"] {
+    display: none !important;
+}
+
+header[data-testid="stHeader"] {
+    background: white !important;
+}
+
+#MainMenu {
+    visibility: hidden !important;
+}
+
+footer {
+    visibility: hidden !important;
+}
+
+/* Optional: reduce top padding so page content moves up */
+.block-container {
+    padding-top: 1.2rem !important;
+}
+
+/* Hard cover for upper-right corner */
+.top-right-cover {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 260px;
+    height: 70px;
+    background: white;
+    z-index: 999999;
+    pointer-events: none;
+}
+</style>
+
+<div class="top-right-cover"></div>
+""", unsafe_allow_html=True)
 
 apply_advisors_theme()
 
