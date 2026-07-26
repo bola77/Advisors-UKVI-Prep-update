@@ -1,198 +1,190 @@
-# pages/03_Admin_Dashboard.py
-
-import io
-
+import hmac
+import os
 import pandas as pd
 import streamlit as st
 
-from advisors_theme import apply_advisors_theme
-
 st.set_page_config(
-    page_title="Pre UKVI Admin Dashboard",
-    page_icon="📊",
+    page_title="Admin Dashboard",
+    page_icon="🔒",
     layout="wide",
 )
 
-apply_advisors_theme()
+REPORTS_FILE = "data/all_student_reports.csv"
 
-st.title("Pre UKVI Admin Dashboard")
-st.caption("Aggregate view for advisors and centres across multiple interview sessions.")
+# ---------- Session state defaults ----------
+if "admin_status" not in st.session_state:
+    st.session_state.admin_status = "unverified"  # unverified | incorrect | verified
+
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
+if "role" not in st.session_state:
+    st.session_state.role = None
+
+if "user_name" not in st.session_state:
+    st.session_state.user_name = "Admin"
 
 
-# ------------ Upload reports ------------
+# ---------- Auth helpers ----------
+def logout_admin():
+    st.session_state.admin_status = "unverified"
+    st.session_state.is_admin = False
+    st.session_state.role = None
+    st.session_state.admin_password = ""
 
-st.subheader("Upload one or more interview reports")
 
-uploaded_files = st.file_uploader(
-    "Upload CSV reports (advisor or speaking mode)",
-    type=["csv"],
-    accept_multiple_files=True,
-)
+def check_admin_password():
+    entered = st.session_state.get("admin_password", "")
+    expected = st.secrets.get("ADMIN_PASSWORD", "")
 
-if not uploaded_files:
-    st.info("Upload at least one CSV report to see aggregated insights.")
+    if expected and hmac.compare_digest(entered, expected):
+        st.session_state.admin_status = "verified"
+        st.session_state.is_admin = True
+        st.session_state.role = "admin"
+    else:
+        st.session_state.admin_status = "incorrect"
+        st.session_state.is_admin = False
+        st.session_state.role = None
+
+    st.session_state.admin_password = ""
+
+
+def admin_login_prompt():
+    st.title("🔒 Admin Login")
+    st.caption("Enter the admin password to access all student speaking reports.")
+
+    st.text_input(
+        "Admin password",
+        type="password",
+        key="admin_password",
+    )
+
+    if st.button("Login", use_container_width=True, type="primary"):
+        check_admin_password()
+
+    if st.session_state.admin_status == "incorrect":
+        st.error("Incorrect admin password.")
+
+
+# ---------- Guard ----------
+if not (
+    st.session_state.get("admin_status") == "verified"
+    and st.session_state.get("is_admin", False)
+):
+    admin_login_prompt()
     st.stop()
 
-dfs = []
-for f in uploaded_files:
+
+# ---------- Admin dashboard ----------
+st.title("Admin Dashboard")
+st.caption("View all saved student interview reports.")
+
+top1, top2 = st.columns([4, 1])
+
+with top2:
+    st.button("Logout", on_click=logout_admin, use_container_width=True)
+
+with top1:
+    st.success("Admin access granted.")
+
+st.divider()
+
+# ---------- Load all reports ----------
+if os.path.exists(REPORTS_FILE):
     try:
-        df = pd.read_csv(f)
-        # Try to infer applicant name if captured in a column, else use filename
-        if "Applicant" not in df.columns:
-            df["Applicant"] = f.name.split(".")[0]
-        dfs.append(df)
+        df = pd.read_csv(REPORTS_FILE)
+
+        st.subheader("All Student Reports")
+
+        if df.empty:
+            st.info("The reports file exists, but it is currently empty.")
+        else:
+            # Optional filters
+            filter_cols = st.columns(3)
+
+            with filter_cols[0]:
+                applicant_filter = st.text_input("Filter by applicant name")
+
+            with filter_cols[1]:
+                university_options = ["All"] + sorted(
+                    [u for u in df["University"].dropna().astype(str).unique()]
+                ) if "University" in df.columns else ["All"]
+                selected_university = st.selectbox("Filter by university", university_options)
+
+            with filter_cols[2]:
+                category_options = ["All"] + sorted(
+                    [c for c in df["Category"].dropna().astype(str).unique()]
+                ) if "Category" in df.columns else ["All"]
+                selected_category = st.selectbox("Filter by category", category_options)
+
+            filtered_df = df.copy()
+
+            if applicant_filter and "Applicant" in filtered_df.columns:
+                filtered_df = filtered_df[
+                    filtered_df["Applicant"].astype(str).str.contains(applicant_filter, case=False, na=False)
+                ]
+
+            if selected_university != "All" and "University" in filtered_df.columns:
+                filtered_df = filtered_df[
+                    filtered_df["University"].astype(str) == selected_university
+                ]
+
+            if selected_category != "All" and "Category" in filtered_df.columns:
+                filtered_df = filtered_df[
+                    filtered_df["Category"].astype(str) == selected_category
+                ]
+
+            summary_cols = st.columns(4)
+            with summary_cols[0]:
+                st.metric("Total Report Rows", len(filtered_df))
+            with summary_cols[1]:
+                if "Applicant" in filtered_df.columns and not filtered_df.empty:
+                    st.metric("Unique Students", filtered_df["Applicant"].nunique())
+                else:
+                    st.metric("Unique Students", "N/A")
+            with summary_cols[2]:
+                if "Score" in filtered_df.columns and not filtered_df.empty:
+                    st.metric("Average Score", f"{pd.to_numeric(filtered_df['Score'], errors='coerce').mean():.1f}")
+                else:
+                    st.metric("Average Score", "N/A")
+            with summary_cols[3]:
+                if "Readiness" in filtered_df.columns and not filtered_df.empty:
+                    high_risk_count = (filtered_df["Readiness"].astype(str).str.contains("risk", case=False, na=False)).sum()
+                    st.metric("Risk-labelled Rows", int(high_risk_count))
+                else:
+                    st.metric("Risk-labelled Rows", "N/A")
+
+            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+            csv_data = filtered_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇ Download visible reports (CSV)",
+                data=csv_data,
+                file_name="student_speaking_reports_filtered.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+            with st.expander("Column visibility check"):
+                st.write(list(filtered_df.columns))
+
     except Exception as e:
-        st.warning(f"Could not read {f.name}: {e}")
+        st.error(f"Could not load reports file: {e}")
 
-if not dfs:
-    st.error("No valid CSVs were loaded.")
-    st.stop()
+else:
+    st.warning("No saved student reports were found yet.")
+    st.caption(f"Expected file path: {REPORTS_FILE}")
 
-all_df = pd.concat(dfs, ignore_index=True)
+st.divider()
 
-st.success(f"Loaded {len(uploaded_files)} report(s), {len(all_df)} rows total.")
-
-
-# ------------ Basic filters ------------
-
-st.subheader("Filters")
-
-col1, col2 = st.columns(2)
-with col1:
-    categories = sorted(all_df["Category"].dropna().unique())
-    selected_categories = st.multiselect(
-        "Filter by category",
-        options=categories,
-        default=categories,
-    )
-with col2:
-    readiness_vals = sorted(all_df.get("Readiness", "").dropna().unique())
-    selected_readiness = st.multiselect(
-        "Filter by readiness level",
-        options=readiness_vals,
-        default=readiness_vals,
-    )
-
-filtered = all_df.copy()
-if selected_categories:
-    filtered = filtered[filtered["Category"].isin(selected_categories)]
-if "Readiness" in filtered.columns and selected_readiness:
-    filtered = filtered[filtered["Readiness"].isin(selected_readiness)]
-
-st.caption(f"Filtered rows: {len(filtered)}")
-
-
-# ------------ Aggregate metrics ------------
-
-st.subheader("Centre-wide performance overview")
-
-if filtered.empty:
-    st.warning("No data after filtering. Adjust filters to see metrics.")
-    st.stop()
-
-# Category-level scores
-cat_summary = (
-    filtered.groupby("Category")["Score"]
-    .agg(["count", "mean"])
-    .reset_index()
-    .rename(columns={"count": "Questions", "mean": "Average Score"})
-)
-
-c1, c2 = st.columns([1.6, 1.4])
-with c1:
-    st.markdown("**Average score by category**")
-    st.dataframe(cat_summary, use_container_width=True, hide_index=True)
-
-with c2:
-    # Applicant-level averages
-    app_summary = (
-        filtered.groupby("Applicant")["Score"]
-        .agg(["count", "mean"])
-        .reset_index()
-        .rename(columns={"count": "Questions", "mean": "Average Score"})
-    )
-    st.markdown("**Average score by applicant**")
-    st.dataframe(app_summary, use_container_width=True, hide_index=True)
-
-weak_cats = cat_summary[cat_summary["Average Score"] <= 3]["Category"].tolist()
-if weak_cats:
-    st.markdown(
-        "**Weak categories across the centre:** " +
-        ", ".join(f"`{c}`" for c in weak_cats)
-    )
-
-# Common risk flags and missing points
-st.subheader("Common risk phrases and gaps")
-
-risk_all, missing_all = [], []
-
-if "Risk Flags" in filtered.columns:
-    for val in filtered["Risk Flags"].dropna():
-        for item in str(val).split(","):
-            item = item.strip()
-            if item:
-                risk_all.append(item)
-
-if "Missing Points" in filtered.columns:
-    for val in filtered["Missing Points"].dropna():
-        for item in str(val).split(","):
-            item = item.strip()
-            if item:
-                missing_all.append(item)
-
-risk_df = (
-    pd.Series(risk_all)
-    .value_counts()
-    .reset_index()
-    .rename(columns={"index": "Risk Flag", 0: "Count"})
-)
-
-missing_df = (
-    pd.Series(missing_all)
-    .value_counts()
-    .reset_index()
-    .rename(columns={"index": "Gap", 0: "Count"})
-)
-
-c3, c4 = st.columns(2)
-with c3:
-    st.markdown("**Top risk phrases to coach against**")
-    st.dataframe(risk_df, use_container_width=True, hide_index=True)
-with c4:
-    st.markdown("**Most frequent missing points**")
-    st.dataframe(missing_df, use_container_width=True, hide_index=True)
-
-
-# ------------ Drill-down table ------------
-
-st.subheader("Drill-down: individual answers")
-
-cols = [
-    "Applicant",
-    "Question #",
-    "Category",
-    "Question",
-    "Answer",
-    "Score",
-    "Feedback",
-    "Student Tip",
-    "Risk Flags",
-    "Missing Points",
-    "Readiness",
-]
-existing_cols = [c for c in cols if c in filtered.columns]
-
-st.dataframe(
-    filtered[existing_cols],
-    use_container_width=True,
-    hide_index=True,
-)
-
-# Export aggregated dataset
-csv_bytes = filtered.to_csv(index=False).encode("utf-8")
-st.download_button(
-    "⬇ Download filtered combined dataset (CSV)",
-    csv_bytes,
-    "pre_ukvi_combined_filtered.csv",
-    "text/csv",
+st.subheader("Session State Debug")
+st.json(
+    {
+        "admin_status": st.session_state.get("admin_status"),
+        "is_admin": st.session_state.get("is_admin"),
+        "role": st.session_state.get("role"),
+        "user_name": st.session_state.get("user_name"),
+        "reports_file": REPORTS_FILE,
+        "reports_file_exists": os.path.exists(REPORTS_FILE),
+    }
 )
