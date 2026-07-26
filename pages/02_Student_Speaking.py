@@ -507,7 +507,7 @@ else:
                 missing_points = list(set(missing_points + ["No usable spoken or typed response"]))
                 readiness = "Elevated risk"
 
-            elif not local.get("red_flag") and final_score <= 2:
+            if not local.get("red_flag") and final_score <= 2:
                 try:
                     oa = openai_evaluate_answer(
                         cleaned, category, question, st.session_state.profile
@@ -564,7 +564,8 @@ else:
             st.session_state.is_submitting = False
             st.session_state.audio_error_message = ""
 
-            time.sleep(DEFAULT_THINK_TIME)
+            feedback_pause = max(DEFAULT_THINK_TIME, 8)
+            time.sleep(feedback_pause)
             st.session_state.idx += 1
             pick_question(st)
             st.rerun()
