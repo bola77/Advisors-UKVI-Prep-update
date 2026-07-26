@@ -79,6 +79,28 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     return "This is a placeholder transcript. Replace with real transcription."
 
 
+def render_timer():
+    remaining, t_str = time_left(st)
+
+    if remaining > 60:
+        timer_class = "big-timer-green"
+    elif remaining > 20:
+        timer_class = "big-timer-amber"
+    else:
+        timer_class = "big-timer-red"
+
+    st.markdown(
+        f"""
+        <div class="big-timer-wrap">
+            <div class="big-timer-label">Time left for this question</div>
+            <div class="big-timer-value {timer_class}">{t_str}</div>
+            <div class="big-timer-note">Try to answer clearly before time runs out.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 init_session_state(st)
 
 if "spoken_audio_bytes" not in st.session_state:
@@ -92,34 +114,6 @@ if "pending_typed_answer" not in st.session_state:
 
 if "is_submitting" not in st.session_state:
     st.session_state.is_submitting = False
-
-
-@st.fragment(run_every="1s")
-def live_timer():
-    if (
-        st.session_state.get("started")
-        and not st.session_state.get("completed")
-        and not st.session_state.get("is_submitting")
-    ):
-        remaining, t_str = time_left(st)
-
-        if remaining > 60:
-            timer_class = "big-timer-green"
-        elif remaining > 20:
-            timer_class = "big-timer-amber"
-        else:
-            timer_class = "big-timer-red"
-
-        st.markdown(
-            f"""
-            <div class="big-timer-wrap">
-                <div class="big-timer-label">Time left for this question</div>
-                <div class="big-timer-value {timer_class}">{t_str}</div>
-                <div class="big-timer-note">Try to answer clearly before time runs out.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
 
 with st.sidebar:
@@ -318,7 +312,7 @@ else:
     st.write(question)
 
     if not st.session_state.is_submitting:
-        live_timer()
+        render_timer()
         st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
         st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
         st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
@@ -372,7 +366,6 @@ else:
             st.session_state.pending_audio_bytes = st.session_state.spoken_audio_bytes
             st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "")
             st.session_state.is_submitting = True
-            st.rerun()
 
     else:
         st.info("Processing your answer...")
@@ -393,7 +386,7 @@ else:
                 st.session_state.pending_audio_bytes = None
                 st.session_state.pending_typed_answer = ""
                 st.warning("Please record a short answer or type your response.")
-                st.rerun()
+                st.stop()
 
             st.markdown("**Transcript (what UKVI would hear):**")
             st.write(cleaned)
