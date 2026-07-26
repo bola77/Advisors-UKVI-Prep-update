@@ -386,6 +386,14 @@ else:
         if st.session_state.audio_error_message:
             st.warning(st.session_state.audio_error_message)
 
+        # Submit button FIRST so it is always visible
+        submit_now = st.button(
+            "Submit spoken answer →",
+            use_container_width=True,
+            key=f"submit_spoken_{idx}",
+            type="primary",
+        )
+
         if mic_recorder is None:
             st.warning("Microphone recorder is not installed in this deployment.")
         else:
@@ -404,7 +412,9 @@ else:
 
                 if audio_error:
                     st.session_state.spoken_audio_bytes = None
-                    st.session_state.audio_error_message = f"Recording failed: {audio_error}. Please type your answer below."
+                    st.session_state.audio_error_message = (
+                        f"Recording failed: {audio_error}. Please type your answer below."
+                    )
                 elif new_audio and isinstance(new_audio, (bytes, bytearray)):
                     st.session_state.spoken_audio_bytes = bytes(new_audio)
                     st.session_state.audio_error_message = ""
@@ -426,13 +436,11 @@ else:
             key=f"typed_fallback_{idx}",
         )
 
-        if st.button(
-            "Submit spoken answer →",
-            use_container_width=True,
-            key=f"submit_spoken_{idx}",
-        ):
+        if submit_now:
             st.session_state.pending_audio_bytes = st.session_state.spoken_audio_bytes
-            st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "").strip()
+            st.session_state.pending_typed_answer = st.session_state.get(
+                f"typed_fallback_{idx}", ""
+            ).strip()
             st.session_state.is_submitting = True
             st.rerun()
 
