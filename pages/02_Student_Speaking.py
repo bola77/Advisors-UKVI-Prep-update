@@ -125,7 +125,7 @@ def render_js_timer():
         <div id="{dom_id}" class="big-timer-wrap">
             <div class="big-timer-label">Time left for this question</div>
             <div id="{dom_id}-value" class="big-timer-value">--:--</div>
-            <div id="{dom_id}-note" class="big-timer-note">Try to answer clearly before time runs out.</div>
+            <div id="{dom_id}-note" class="big-timer-note">Speak clearly and keep your answer focused.</div>
         </div>
 
         <script>
@@ -144,13 +144,13 @@ def render_js_timer():
 
                 if (secs > 60) {{
                     valueEl.style.color = "#15803d";
-                    noteEl.textContent = "Try to answer clearly before time runs out.";
+                    noteEl.textContent = "Speak clearly and keep your answer focused.";
                 }} else if (secs > 20) {{
                     valueEl.style.color = "#d97706";
-                    noteEl.textContent = "Focus your answer, you still have some time.";
+                    noteEl.textContent = "Wrap up your answer and prepare to submit.";
                 }} else {{
                     valueEl.style.color = "#dc2626";
-                    noteEl.textContent = "Finish your answer soon, time is almost up.";
+                    noteEl.textContent = "When the timer reaches 00:00, finish speaking and click submit.";
                 }}
             }}
 
@@ -281,6 +281,8 @@ Your transcript (what the visa officer hears) is scored using the same logic as 
 
 
 if not st.session_state.started:
+    total_sections = len(QUESTION_ORDER)
+    approx_minutes = total_sections * 3
     st.info(
         f"Fill in your profile on the left, then click 'Start Speaking Interview'. "
         f"Estimated duration: about {approx_minutes} minutes."
@@ -349,39 +351,6 @@ else:
     st.session_state.current_remaining_secs = remaining
     st.session_state.current_question_idx = idx
 
-    if (
-        remaining == 0
-        and not st.session_state.get("question_expired", False)
-        and not st.session_state.get("is_submitting")
-    ):
-        st.session_state.question_expired = True
-        st.session_state.log.append(
-            {
-                "Question #": idx + 1,
-                "Category": category,
-                "Question": question,
-                "Answer": "",
-                "Score": 1,
-                "Feedback": "Time expired before answering.",
-                "Student Tip": "Start speaking earlier and give a complete answer.",
-                "Risk Flags": "Time expired",
-                "Missing Points": "No spoken response captured",
-                "Counsellor Note": "Question auto-advanced after the timer expired.",
-                "Readiness": "Elevated risk",
-                "Red Flag": False,
-                "Generic Positives": 0,
-                "Cluster Hits": 0,
-            }
-        )
-        st.session_state.scores.append(1)
-        st.session_state.spoken_audio_bytes = None
-        st.session_state.pending_audio_bytes = None
-        st.session_state.pending_typed_answer = ""
-        st.session_state.is_submitting = False
-        st.session_state.idx += 1
-        pick_question(st)
-        st.rerun()
-
     st.progress(
         idx / total_q if total_q else 0,
         text=f"Question {idx + 1} of {total_q}",
@@ -393,6 +362,7 @@ else:
 
     if not st.session_state.is_submitting:
         render_js_timer()
+        st.caption("When the timer reaches 00:00, finish speaking and click submit to continue.")
         st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
         st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
         st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
@@ -446,6 +416,7 @@ else:
             st.session_state.pending_audio_bytes = st.session_state.spoken_audio_bytes
             st.session_state.pending_typed_answer = st.session_state.get(f"typed_fallback_{idx}", "")
             st.session_state.is_submitting = True
+            st.rerun()
 
     else:
         st.info("Processing your answer...")
