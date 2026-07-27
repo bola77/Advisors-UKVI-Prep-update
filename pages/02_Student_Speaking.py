@@ -3,6 +3,7 @@
 import time
 import os
 import io
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
@@ -35,9 +36,9 @@ st.set_page_config(
     page_icon="🎓",
     layout="wide",
 )
+
 st.markdown("""
 <style>
-/* Hide Streamlit header/toolbar items */
 div[data-testid="stToolbar"] {
     display: none !important;
 }
@@ -66,12 +67,10 @@ footer {
     visibility: hidden !important;
 }
 
-/* Optional: reduce top padding so page content moves up */
 .block-container {
     padding-top: 1.2rem !important;
 }
 
-/* Hard cover for upper-right corner */
 .top-right-cover {
     position: fixed;
     top: 0;
@@ -265,6 +264,9 @@ if "current_question_idx" not in st.session_state:
 if "audio_error_message" not in st.session_state:
     st.session_state.audio_error_message = ""
 
+if "saved_to_master_reports" not in st.session_state:
+    st.session_state.saved_to_master_reports = False
+
 
 with st.sidebar:
     st.header("👤 Applicant Profile")
@@ -308,6 +310,7 @@ with st.sidebar:
         st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
         st.session_state.audio_error_message = ""
+        st.session_state.saved_to_master_reports = False
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
@@ -329,6 +332,7 @@ with st.sidebar:
         st.session_state.pending_typed_answer = ""
         st.session_state.is_submitting = False
         st.session_state.audio_error_message = ""
+        st.session_state.saved_to_master_reports = False
         st.session_state.profile = {
             "name": s_name or "Applicant",
             "university": s_university or "your university",
@@ -376,9 +380,70 @@ elif st.session_state.completed:
     m4.metric("Verdict", overall_verdict)
 
     if st.session_state.log:
-        import pandas as pd
+        REPORTS_FILE = "data/all_student_reports.csv"
+        os.makedirs("data", exist_ok=True)
 
-        df = pd.DataFrame(st.session_state.log)
+        df = pd.DataFrame(st.session_state.log).copy()
+
+        profile = st.session_state.get("profile", {})
+        applicant_name = profile.get("name", "Applicant")
+        university = profile.get("university", "")
+        course = profile.get("course", "")
+        country = profile.get("country", "")
+        course_track = profile.get("course_track", "")
+        study_level = "PG" if "PG" in str(course_track) else "UG"
+
+        session_identifier = f"{applicant_name}-{int(time.time())}"
+
+        df.insert(0, "Applicant", applicant_name)
+        df.insert(1, "University", university)
+        df.insert(2, "Course", course)
+        df.insert(3, "Country", country)
+        df.insert(4, "Study Level", study_level)
+        df.insert(5, "Session ID", session_identifier)
+
+        expected_columns = [
+            "Applicant",
+            "University",
+            "Course",
+            "Country",
+            "Study Level",
+            "Session ID",
+            "Question #",
+            "Category",
+            "Question",
+            "Answer",
+            "Score",
+            "Feedback",
+            "Student Tip",
+            "Risk Flags",
+            "Missing Points",
+            "Counsellor Note",
+            "Readiness",
+            "Red Flag",
+            "Generic Positives",
+            "Cluster Hits",
+        ]
+
+        for col in expected_columns:
+            if col not in df.columns:
+                df[col] = ""
+
+        df = df[expected_columns]
+
+        if not st.session_state.saved_to_master_reports:
+            file_exists = os.path.exists(REPORTS_FILE)
+            file_has_content = file_exists and os.path.getsize(REPORTS_FILE) > 0
+
+            df.to_csv(
+                REPORTS_FILE,
+                mode="a",
+                header=not file_has_content,
+                index=False,
+            )
+
+            st.session_state.saved_to_master_reports = True
+
         st.divider()
         st.dataframe(
             df[
@@ -395,20 +460,7 @@ elif st.session_state.completed:
             hide_index=True,
         )
 
-        export_cols = [
-            "Question #",
-            "Category",
-            "Question",
-            "Answer",
-            "Score",
-            "Feedback",
-            "Student Tip",
-            "Risk Flags",
-            "Missing Points",
-            "Counsellor Note",
-            "Readiness",
-        ]
-        csv = df[export_cols].to_csv(index=False).encode("utf-8")
+        csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
             "⬇ Download Speaking Interview Report (CSV)",
             csv,
