@@ -122,26 +122,6 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     return text.strip()
 
 
-def start_recording_timer():
-    st.session_state.recording_started_at = time.time()
-    st.session_state.is_recording_now = True
-    st.session_state.recording_elapsed_secs = 0
-
-
-def stop_recording_timer():
-    if st.session_state.recording_started_at:
-        st.session_state.recording_elapsed_secs = int(
-            time.time() - st.session_state.recording_started_at
-        )
-    st.session_state.is_recording_now = False
-
-
-def reset_recording_timer():
-    st.session_state.recording_started_at = None
-    st.session_state.is_recording_now = False
-    st.session_state.recording_elapsed_secs = 0
-
-
 def render_js_timer():
     remaining = st.session_state.get("current_remaining_secs", 0)
     question_idx = st.session_state.get("current_question_idx", 0)
@@ -252,12 +232,6 @@ if "audio_error_message" not in st.session_state:
     st.session_state.audio_error_message = ""
 if "saved_to_master_reports" not in st.session_state:
     st.session_state.saved_to_master_reports = False
-if "recording_started_at" not in st.session_state:
-    st.session_state.recording_started_at = None
-if "is_recording_now" not in st.session_state:
-    st.session_state.is_recording_now = False
-if "recording_elapsed_secs" not in st.session_state:
-    st.session_state.recording_elapsed_secs = 0
 if "show_feedback_gate" not in st.session_state:
     st.session_state.show_feedback_gate = False
 
@@ -302,7 +276,6 @@ with st.sidebar:
         st.session_state.audio_error_message = ""
         st.session_state.saved_to_master_reports = False
         st.session_state.show_feedback_gate = False
-        reset_recording_timer()
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
@@ -326,7 +299,6 @@ if start:
     st.session_state.audio_error_message = ""
     st.session_state.saved_to_master_reports = False
     st.session_state.show_feedback_gate = False
-    reset_recording_timer()
 
     st.session_state.profile = {
         "name": s_name or "Applicant",
@@ -483,43 +455,25 @@ else:
             f"{cluster['extra_tip']} Example programmes include: {cluster['examples']}."
         )
 
-    st.info("Record a short answer, then click submit.")
+    st.info("Click the recorder below to start speaking, then click it again to stop.")
     st.caption("For reliability, keep recordings short. If recording fails, type your answer in the box below.")
 
     if st.session_state.audio_error_message:
         st.warning(st.session_state.audio_error_message)
 
-    rec1, rec2 = st.columns(2)
-
-    with rec1:
-        st.button(
-            "Start recording",
-            key=f"startrecord{idx}",
-            use_container_width=True,
-            on_click=start_recording_timer,
-            disabled=st.session_state.is_recording_now,
-        )
-
-    with rec2:
-        submit_now = st.button(
-            "Submit spoken answer",
-            use_container_width=True,
-            key=f"submitspoken{idx}",
-            type="primary",
-        )
-
-    if st.session_state.is_recording_now and st.session_state.recording_started_at:
-        elapsed = int(time.time() - st.session_state.recording_started_at)
-        mins = elapsed // 60
-        secs = elapsed % 60
-        st.info(f"Recording in progress: {mins:02d}:{secs:02d}")
+    submit_now = st.button(
+        "Submit spoken answer",
+        use_container_width=True,
+        key=f"submitspoken{idx}",
+        type="primary",
+    )
 
     if mic_recorder is None:
         st.warning("Microphone recorder is not installed in this deployment.")
     else:
         audio_data = mic_recorder(
-            start_prompt="Click here to record / stop",
-            stop_prompt="Stop recording",
+            start_prompt="🎙️ Click to start recording",
+            stop_prompt="⏹️ Click to stop recording",
             just_once=True,
             use_container_width=True,
             key=f"mic{idx}",
@@ -531,23 +485,17 @@ else:
             audio_error = audio_data.get("error")
 
             if audio_error:
-                stop_recording_timer()
                 st.session_state.spoken_audio_bytes = None
                 st.session_state.audio_error_message = (
                     f"Recording failed: {audio_error}. Please type your answer below."
                 )
 
             elif new_audio and isinstance(new_audio, (bytes, bytearray)):
-                stop_recording_timer()
                 st.session_state.spoken_audio_bytes = bytes(new_audio)
                 st.session_state.audio_error_message = ""
-                st.caption(
-                    f"Recorded audio ready. Sample rate: {sr} Hz. "
-                    f"Duration: about {st.session_state.recording_elapsed_secs} seconds."
-                )
+                st.success(f"Recorded audio ready. Sample rate: {sr} Hz.")
 
             else:
-                stop_recording_timer()
                 st.session_state.spoken_audio_bytes = None
                 st.session_state.audio_error_message = (
                     "Recording format was not recognised. Please type your answer below and submit."
@@ -679,13 +627,11 @@ else:
             st.session_state.is_submitting = False
             st.session_state.audio_error_message = ""
             st.session_state.show_feedback_gate = True
-            reset_recording_timer()
 
         except Exception as e:
             st.session_state.is_submitting = False
             st.session_state.pending_audio_bytes = None
             st.session_state.pending_typed_answer = ""
-            reset_recording_timer()
             st.error(f"Transcription or scoring failed: {e}")
 
     if st.session_state.show_feedback_gate:
