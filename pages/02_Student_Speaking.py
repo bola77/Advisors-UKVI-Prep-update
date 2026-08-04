@@ -13,7 +13,6 @@ from questions import (
     QUESTION_HINTS,
     ANSWER_TIPS,
     COURSE_PROFILES,
-    DEFAULT_THINK_TIME,
 )
 from session import (
     init_session_state,
@@ -169,7 +168,7 @@ def render_js_timer():
       <div id="{dom_id}" class="big-timer-wrap">
         <div class="big-timer-label">Time left for this question</div>
         <div id="{dom_id}-value" class="big-timer-value">--:--</div>
-        <div id="{dom_id}-note" class="big-timer-note">Speak clearly and keep your answer focused.</div>
+        <div id="{dom_id}-note" class="big-timer-note">Speak clearly and support your answer with specific details.</div>
       </div>
 
       <script>
@@ -449,7 +448,6 @@ else:
     total_q = len(QUESTION_ORDER)
 
     remaining, _ = time_left(st)
-    remaining = remaining + 60
     st.session_state.current_remaining_secs = remaining
     st.session_state.current_question_idx = idx
 
@@ -461,7 +459,7 @@ else:
     if not st.session_state.is_submitting:
         render_js_timer()
 
-    st.caption("You now have an extra 1 minute for each answer. Use it to add specific evidence and clear reasons.")
+    st.caption("You have an extra 1 minute for each answer. Use it to add specific evidence and clear reasons.")
     st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
     st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
     st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
@@ -594,6 +592,7 @@ else:
                     "credibility": 1,
                     "clarity": 1,
                 }
+                better_version = "Answer directly in your own words and add one clear reason plus one concrete detail."
 
             if not red_flag:
                 try:
@@ -628,8 +627,10 @@ else:
                 strengths.append("You referenced course-related details.")
             if local.get("generic_pos", 0) > 0:
                 strengths.append("Your answer included positive intent signals.")
-            if final_score >= 4:
-                strengths.append("Your response was broadly credible and well aligned.")
+            if dimension_scores.get("clarity", 0) >= 4:
+                strengths.append("Your answer was clear and easy to follow.")
+            if dimension_scores.get("credibility", 0) >= 4:
+                strengths.append("Your response sounded broadly credible.")
 
             if strengths:
                 st.success("What worked: " + " ".join(strengths[:2]))
@@ -648,7 +649,7 @@ else:
                 d4.metric("Clarity", dimension_scores.get("clarity", 0))
 
             if better_version:
-                st.info(f"Better version: {better_version}")
+                st.info(f"Stronger example answer: {better_version}")
 
             st.caption(
                 f"Signals: {local.get('generic_pos', 0)} generic positives, "
