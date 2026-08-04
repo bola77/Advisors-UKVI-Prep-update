@@ -185,15 +185,15 @@ def render_js_timer():
             valueEl.textContent =
               mm.toString().padStart(2, "0") + ":" + ss.toString().padStart(2, "0");
 
-            if (secs > 60) {{
+            if (secs > 90) {{
               valueEl.style.color = "#15803d";
-              noteEl.textContent = "Speak clearly and keep your answer focused.";
-            }} else if (secs > 20) {{
+              noteEl.textContent = "Speak clearly and support your answer with specific details.";
+            }} else if (secs > 30) {{
               valueEl.style.color = "#d97706";
-              noteEl.textContent = "Wrap up your answer and prepare to submit.";
+              noteEl.textContent = "Add one final concrete point and prepare to submit.";
             }} else {{
               valueEl.style.color = "#dc2626";
-              noteEl.textContent = "When the timer reaches 00:00, finish speaking and click submit.";
+              noteEl.textContent = "Finish your answer and click submit.";
             }}
           }}
 
@@ -279,7 +279,7 @@ with st.sidebar:
         st.rerun()
 
     total_sections = len(QUESTION_ORDER)
-    approx_minutes = total_sections * 3
+    approx_minutes = total_sections * 4
     st.caption(
         f"Estimated interview duration: about {approx_minutes} minutes "
         f"({total_sections} categories, 1 question per category)."
@@ -316,19 +316,19 @@ if start:
 with st.expander("How your spoken answers are scored"):
     st.markdown(
         """
-- **5/5** Excellent — clear, specific, and aligned with your UK course and career plan.
-- **4/5** Good — strong answer; add one more concrete detail.
-- **3/5** Average — basically correct but still generic.
-- **2/5** Weak — vague or incomplete.
-- **1/5** High risk — unclear or risky language, or UKVI red-flag phrases.
+- **5/5** Excellent — clear, specific, credible, and well aligned with your course and future plans.
+- **4/5** Good — relevant and believable, but still needs one or two stronger details.
+- **3/5** Average — acceptable, but still generic or underdeveloped.
+- **2/5** Weak — vague, incomplete, or poorly supported.
+- **1/5** High risk — serious credibility, clarity, or red-flag concerns.
 
-Your transcript (“what the visa officer hears”) is scored using the same logic as the typed mode.
+Your answer is assessed on relevance, specificity, credibility, and clarity.
         """
     )
 
 if not st.session_state.started:
     total_sections = len(QUESTION_ORDER)
-    approx_minutes = total_sections * 3
+    approx_minutes = total_sections * 4
     st.info(
         f"Fill in your profile on the left, then click Start Speaking Interview. "
         f"Estimated duration: about {approx_minutes} minutes."
@@ -390,6 +390,11 @@ elif st.session_state.completed:
             "Red Flag",
             "Generic Positives",
             "Cluster Hits",
+            "Relevance",
+            "Specificity",
+            "Credibility",
+            "Clarity",
+            "Better Version",
         ]
 
         for col in expected_columns:
@@ -411,7 +416,20 @@ elif st.session_state.completed:
 
         st.divider()
         st.dataframe(
-            df[["Question #", "Category", "Score", "Feedback", "Student Tip", "Readiness"]],
+            df[
+                [
+                    "Question #",
+                    "Category",
+                    "Score",
+                    "Feedback",
+                    "Student Tip",
+                    "Readiness",
+                    "Relevance",
+                    "Specificity",
+                    "Credibility",
+                    "Clarity",
+                ]
+            ],
             use_container_width=True,
             hide_index=True,
         )
@@ -431,6 +449,7 @@ else:
     total_q = len(QUESTION_ORDER)
 
     remaining, _ = time_left(st)
+    remaining = remaining + 60
     st.session_state.current_remaining_secs = remaining
     st.session_state.current_question_idx = idx
 
@@ -442,7 +461,7 @@ else:
     if not st.session_state.is_submitting:
         render_js_timer()
 
-    st.caption("When the timer reaches 00:00, finish speaking and click submit to continue.")
+    st.caption("You now have an extra 1 minute for each answer. Use it to add specific evidence and clear reasons.")
     st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
     st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
     st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
@@ -557,6 +576,10 @@ else:
             risk_flags = local.get("risk_flags", [])
             missing_points = local.get("missing_points", [])
             readiness = local.get("readiness", "Moderate risk")
+            dimension_scores = local.get("dimension_scores", {})
+            better_version = local.get("better_version", "")
+            counsellor_note = local.get("counsellor_note", "")
+            red_flag = local.get("red_flag", False)
 
             if not cleaned:
                 final_score = 1
@@ -565,8 +588,14 @@ else:
                 risk_flags = list(set(risk_flags + ["No valid audio submission"]))
                 missing_points = list(set(missing_points + ["No usable spoken or typed response"]))
                 readiness = "Elevated risk"
+                dimension_scores = {
+                    "relevance": 1,
+                    "specificity": 1,
+                    "credibility": 1,
+                    "clarity": 1,
+                }
 
-            if not local.get("red_flag"):
+            if not red_flag:
                 try:
                     oa = openai_evaluate_answer(
                         cleaned,
@@ -580,26 +609,51 @@ else:
                     risk_flags = oa.get("risk_flags", risk_flags) or risk_flags
                     missing_points = oa.get("missing_points", missing_points) or missing_points
                     readiness = oa.get("readiness", readiness)
+                    dimension_scores = oa.get("dimension_scores", dimension_scores) or dimension_scores
+                    better_version = oa.get("better_version", better_version) or better_version
                 except Exception as e:
                     st.caption(
                         f"Model-based evaluation unavailable, using local scoring only. ({e})"
                     )
 
-            if local.get("red_flag"):
+            if red_flag:
                 st.error("Your answer contains high-risk language and must be reframed.")
 
             st.markdown(f"### Score: {final_score}/5")
             st.write(feedback)
             st.caption(f"Tip: {student_tip}")
+
+            strengths = []
+            if local.get("cluster_hits", 0) > 0:
+                strengths.append("You referenced course-related details.")
+            if local.get("generic_pos", 0) > 0:
+                strengths.append("Your answer included positive intent signals.")
+            if final_score >= 4:
+                strengths.append("Your response was broadly credible and well aligned.")
+
+            if strengths:
+                st.success("What worked: " + " ".join(strengths[:2]))
+
+            if missing_points:
+                st.warning("What is missing: " + ", ".join(missing_points))
+
+            if risk_flags:
+                st.error("Risk flags: " + ", ".join(risk_flags))
+
+            if dimension_scores:
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Relevance", dimension_scores.get("relevance", 0))
+                d2.metric("Specificity", dimension_scores.get("specificity", 0))
+                d3.metric("Credibility", dimension_scores.get("credibility", 0))
+                d4.metric("Clarity", dimension_scores.get("clarity", 0))
+
+            if better_version:
+                st.info(f"Better version: {better_version}")
+
             st.caption(
                 f"Signals: {local.get('generic_pos', 0)} generic positives, "
                 f"{local.get('cluster_hits', 0)} course-track keywords."
             )
-
-            if risk_flags:
-                st.warning("Risk flags: " + ", ".join(risk_flags))
-            if missing_points:
-                st.caption("Missing points: " + ", ".join(missing_points))
 
             st.session_state.scores.append(final_score)
             st.session_state.log.append(
@@ -613,11 +667,16 @@ else:
                     "Student Tip": student_tip,
                     "Risk Flags": ", ".join(risk_flags),
                     "Missing Points": ", ".join(missing_points),
-                    "Counsellor Note": local.get("counsellor_note", ""),
+                    "Counsellor Note": counsellor_note,
                     "Readiness": readiness,
-                    "Red Flag": local.get("red_flag", False),
+                    "Red Flag": red_flag,
                     "Generic Positives": local.get("generic_pos", 0),
                     "Cluster Hits": local.get("cluster_hits", 0),
+                    "Relevance": dimension_scores.get("relevance", ""),
+                    "Specificity": dimension_scores.get("specificity", ""),
+                    "Credibility": dimension_scores.get("credibility", ""),
+                    "Clarity": dimension_scores.get("clarity", ""),
+                    "Better Version": better_version,
                 }
             )
 
