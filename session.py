@@ -5,6 +5,8 @@ import random
 
 from questions import QUESTION_ORDER, QUESTION_BANK, QUESTION_TIME_SECONDS
 
+EXTRA_TIME_SECONDS = 60
+
 
 def init_session_state(st):
     defaults = {
@@ -19,6 +21,7 @@ def init_session_state(st):
         "question_start": None,
         "question_expired": False,
     }
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -40,6 +43,7 @@ def reset_interview_state(st):
             "question_expired",
         ]:
             del st.session_state[key]
+
     init_session_state(st)
 
 
@@ -48,6 +52,7 @@ def pick_question(st):
     if idx >= len(QUESTION_ORDER):
         st.session_state.completed = True
         return
+
     category = QUESTION_ORDER[idx]
     st.session_state.current_category = category
     st.session_state.current_question = random.choice(QUESTION_BANK[category])
@@ -56,11 +61,18 @@ def pick_question(st):
 
 
 def time_left(st):
+    total_time = QUESTION_TIME_SECONDS + EXTRA_TIME_SECONDS
     start = st.session_state.get("question_start")
+
     if not start:
-        return QUESTION_TIME_SECONDS, f"{QUESTION_TIME_SECONDS // 60:02d}:00"
+        return total_time, f"{total_time // 60:02d}:{total_time % 60:02d}"
+
     elapsed = time.time() - start
-    remaining = max(0, int(QUESTION_TIME_SECONDS - elapsed))
+    remaining = max(0, int(total_time - elapsed))
+
+    if remaining == 0:
+        st.session_state.question_expired = True
+
     return remaining, f"{remaining // 60:02d}:{remaining % 60:02d}"
 
 
