@@ -1,4 +1,5 @@
 # pages/02_Student_Speaking.py
+
 import time
 import os
 import io
@@ -28,6 +29,10 @@ try:
 except ImportError:
     mic_recorder = None
 
+
+# ------------------------
+# Page setup and styling
+# ------------------------
 
 st.set_page_config(
     page_title="Pre UKVI Compliance Interview – Student Speaking",
@@ -87,6 +92,7 @@ st.markdown(
             line-height: 1;
             font-weight: 900;
             margin: 0;
+            color: #15803d;
         }
         .big-timer-note {
             margin-top: 0.35rem;
@@ -101,6 +107,10 @@ st.markdown(
 st.title("Pre UKVI Compliance Interview – Student Speaking Mode")
 st.caption("Speak your answers as in a real UKVI interview; get instant feedback.")
 
+
+# ------------------------
+# Helper functions
+# ------------------------
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -168,7 +178,9 @@ def render_js_timer():
       <div id="{dom_id}" class="big-timer-wrap">
         <div class="big-timer-label">Time left for this question</div>
         <div id="{dom_id}-value" class="big-timer-value">--:--</div>
-        <div id="{dom_id}-note" class="big-timer-note">Speak clearly and support your answer with specific details.</div>
+        <div id="{dom_id}-note" class="big-timer-note">
+          Speak clearly and support your answer with specific details.
+        </div>
       </div>
 
       <script>
@@ -213,6 +225,10 @@ def render_js_timer():
     components.html(html, height=170)
 
 
+# ------------------------
+# Session state init
+# ------------------------
+
 init_session_state(st)
 
 if "spoken_audio_bytes" not in st.session_state:
@@ -235,14 +251,20 @@ if "show_feedback_gate" not in st.session_state:
     st.session_state.show_feedback_gate = False
 
 
+# ------------------------
+# Sidebar profile, including study level & course track
+# ------------------------
+
 with st.sidebar:
     st.header("Applicant Profile")
 
     study_level = st.radio("Study level", ["UG", "PG"], horizontal=True)
 
-    filtered_tracks = [
-        track for track in COURSE_PROFILES.keys() if track.startswith(f"{study_level}_")
-    ]
+    all_tracks = list(COURSE_PROFILES.keys())
+    filtered_tracks = [track for track in all_tracks if track.startswith(study_level)]
+    if not filtered_tracks:
+        filtered_tracks = all_tracks
+
     course_track = st.selectbox(
         "Course track",
         filtered_tracks,
@@ -306,11 +328,16 @@ if start:
         "country": s_country or "Nigeria",
         "experience": s_experience or "",
         "course_track": course_track,
+        "study_level": study_level,
     }
 
     pick_question(st)
     st.rerun()
 
+
+# ------------------------
+# Scoring explainer
+# ------------------------
 
 with st.expander("How your spoken answers are scored"):
     st.markdown(
@@ -324,6 +351,11 @@ with st.expander("How your spoken answers are scored"):
 Your answer is assessed on relevance, specificity, credibility, and clarity.
         """
     )
+
+
+# ------------------------
+# Main flow
+# ------------------------
 
 if not st.session_state.started:
     total_sections = len(QUESTION_ORDER)
@@ -340,11 +372,12 @@ elif st.session_state.completed:
 
     st.subheader("Speaking Interview Summary")
 
+    profile = st.session_state.get("profile", {})
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Applicant", st.session_state.profile.get("name", "Applicant"))
-    m2.metric("Questions", len(scores))
-    m3.metric("Average Score", f"{avg:.1f} / 5")
-    m4.metric("Verdict", overall_verdict)
+    m1.metric("Applicant", profile.get("name", "Applicant"))
+    m2.metric("Study level", profile.get("study_level", "UG"))
+    m3.metric("Questions", len(scores))
+    m4.metric("Average Score", f"{avg:.1f} / 5")
 
     if st.session_state.log:
         reports_file = "data/all_student_reports.csv"
@@ -352,13 +385,12 @@ elif st.session_state.completed:
 
         df = pd.DataFrame(st.session_state.log.copy())
 
-        profile = st.session_state.get("profile", {})
         applicant_name = profile.get("name", "Applicant")
         university = profile.get("university", "")
         course = profile.get("course", "")
         country = profile.get("country", "")
         course_track = profile.get("course_track", "")
-        study_level = "PG" if "PG" in str(course_track) else "UG"
+        study_level = profile.get("study_level", "UG")
         session_identifier = f"{applicant_name}-{int(time.time())}"
 
         df.insert(0, "Applicant", applicant_name)
@@ -366,7 +398,8 @@ elif st.session_state.completed:
         df.insert(2, "Course", course)
         df.insert(3, "Country", country)
         df.insert(4, "Study Level", study_level)
-        df.insert(5, "Session ID", session_identifier)
+        df.insert(5, "Course Track", course_track)
+        df.insert(6, "Session ID", session_identifier)
 
         expected_columns = [
             "Applicant",
@@ -374,6 +407,7 @@ elif st.session_state.completed:
             "Course",
             "Country",
             "Study Level",
+            "Course Track",
             "Session ID",
             "Question #",
             "Category",
@@ -447,7 +481,7 @@ else:
     question = st.session_state.current_question
     total_q = len(QUESTION_ORDER)
 
-    remaining, _ = time_left(st)
+    remaining, _ = time_left(st)  # 3 + 1 minutes from session.py
     st.session_state.current_remaining_secs = remaining
     st.session_state.current_question_idx = idx
 
@@ -459,7 +493,7 @@ else:
     if not st.session_state.is_submitting:
         render_js_timer()
 
-    st.caption("You have an extra 1 minute for each answer. Use it to add specific evidence and clear reasons.")
+    st.caption("You have about 4 minutes per answer. Use the extra time to add specific evidence and clear reasons.")
     st.info("Speak naturally, as you would with a visa officer. Avoid memorised scripts.")
     st.caption(QUESTION_HINTS.get(category, "Give a clear, specific answer."))
     st.caption(ANSWER_TIPS.get(category, ANSWER_TIPS["default"]))
@@ -468,7 +502,7 @@ else:
     if selected_track and selected_track in COURSE_PROFILES:
         cluster = COURSE_PROFILES[selected_track]
         st.caption(
-            f"Course track recommendation: **{selected_track}**. "
+            f"Course track recommendation: {selected_track}. "
             f"{cluster['extra_tip']} Example programmes include: {cluster['examples']}."
         )
 
